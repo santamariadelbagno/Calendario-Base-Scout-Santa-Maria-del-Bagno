@@ -69,10 +69,24 @@ let allOccupancy = {};
 let currentFilter = 'all';
 
 function parseDate(str) {
-  const y = parseInt(str.slice(0, 4));
-  const m = parseInt(str.slice(4, 6)) - 1;
-  const d = parseInt(str.slice(6, 8));
-  return new Date(y, m, d);
+  // Gestisce formati UTC con "Z" o date locali
+  if (!str) return null;
+  let date;
+  if (str.endsWith("Z")) {
+    // Converte UTC → ora locale (Europe/Rome)
+    date = new Date(str);
+  } else if (str.length === 8) {
+    // Solo data (es. 20251029)
+    const y = parseInt(str.slice(0,4));
+    const m = parseInt(str.slice(4,6)) - 1;
+    const d = parseInt(str.slice(6,8));
+    date = new Date(y, m, d);
+  } else {
+    date = new Date(str);
+  }
+
+  // Normalizza alla mezzanotte locale
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 // Unisce righe spezzate ICS (quelle che iniziano con spazio/tab)
@@ -103,8 +117,10 @@ function buildOccupancy(events) {
     const text = ((ev.summary || "") + " " + (ev.description || "")).toLowerCase();
     const start = parseDate(ev.start);
     const end = parseDate(ev.end);
+    if (!start || !end) return;
     const isCasa = text.includes("casa");
     const isCampo = text.includes("campo");
+
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       if (!status[key]) status[key] = { casa: false, campo: false };
@@ -133,7 +149,6 @@ function renderCalendar(status, year, month) {
   for (let i = 0; i < offset; i++) html += "<td></td>";
 
   for (let d = 1; d <= daysInMonth; d++) {
-    const date = new Date(year, month, d);
     const key = `${year}-${month}-${d}`;
     const dayStatus = status[key] || { casa: false, campo: false };
 
@@ -170,7 +185,6 @@ async function loadCalendar() {
   updateMonthLabel();
   document.getElementById("loading").style.display = "block";
 
-  // Caching per 1 ora
   const cacheKey = "icsCache";
   const cached = localStorage.getItem(cacheKey);
   let occupancy = {};
@@ -179,6 +193,7 @@ async function loadCalendar() {
     const data = JSON.parse(cached);
     if (Date.now() - data.timestamp < 3600000) { // 1 ora
       occupancy = data.occupancy;
+      allOccupancy = occupancy;
       renderCalendar(occupancy, currentYear, currentMonth);
       document.getElementById("loading").style.display = "none";
       return;
@@ -219,4 +234,5 @@ loadCalendar();
 </script>
 </body>
 </html>
+
 
