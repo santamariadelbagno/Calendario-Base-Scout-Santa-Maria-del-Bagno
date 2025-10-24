@@ -5,29 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Base Scout Santa Maria del Bagno - Disponibilità Casa e Campo di Reparto</title>
 <style>
-  body { font-family: sans-serif; background: #f4f4f4; margin:0; }
-  header { background:#388e3c; color:white; padding:1em; text-align:center; }
-  .legend { display:flex; justify-content:center; margin:1em 0; gap:1em; }
-  .legend span { display:flex; align-items:center; gap:0.3em; }
-  .color-box { width:16px; height:16px; border-radius:3px; border:1px solid #ccc; display:inline-block; }
-  .red { background:#d32f2f; }
-  .green { background:#388e3c; }
-  .nav { text-align:center; margin-bottom:1em; }
-  .nav button { background:#388e3c; color:white; border:none; padding:0.5em 1em; margin:0 0.3em; cursor:pointer; border-radius:5px; }
-  .calendar { max-width:900px; margin:0 auto; background:white; border-radius:10px; overflow:hidden; box-shadow:0 0 10px rgba(0,0,0,0.1); }
-  table { width:100%; border-collapse:collapse; text-align:center; }
-  th { background:#a5d6a7; padding:0.5em; }
-  td { border:1px solid #eee; height:90px; vertical-align:top; padding:3px; font-size:0.85em; position:relative; }
-  .day-number { font-weight:bold; margin-bottom:4px; display:block; }
-  .status { display:flex; flex-direction:column; gap:2px; }
-  .status span { display:flex; align-items:center; gap:0.3em; padding:1px 3px; border-radius:3px; font-size:0.75em; color:white; }
-  footer { text-align:center; margin:1em 0; color:#666; font-size:0.85em; }
+  body { font-family: sans-serif; background: #f4f4f4; margin: 0; }
+  header { background: #388e3c; color: white; padding: 1em; text-align: center; }
+  .legend, .nav, .filters { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 1em; margin: 1em 0; }
+  .color-box { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #ccc; display: inline-block; }
+  .red { background: #d32f2f; }
+  .green { background: #388e3c; }
+  .nav button, .filters button { background: #388e3c; color: white; border: none; padding: 0.5em 1em; cursor: pointer; border-radius: 5px; transition: 0.2s; }
+  .nav button:hover, .filters button:hover { background: #2e7d32; }
+  .calendar { max-width: 900px; margin: 0 auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  table { width: 100%; border-collapse: collapse; text-align: center; }
+  th { background: #a5d6a7; padding: 0.5em; }
+  td { border: 1px solid #eee; height: 90px; vertical-align: top; padding: 3px; font-size: 0.85em; position: relative; }
+  .day-number { font-weight: bold; margin-bottom: 4px; display: block; }
+  .status { display: flex; flex-direction: column; gap: 2px; }
+  .status span { display: flex; align-items: center; gap: 0.3em; padding: 1px 3px; border-radius: 3px; font-size: 0.75em; color: white; }
+  footer { text-align: center; margin: 1em 0; color: #666; font-size: 0.85em; }
+  #loading { text-align: center; color: #555; margin-top: 1em; }
+  @media (max-width: 600px) {
+    th, td { font-size: 0.7em; padding: 2px; }
+    .status span { font-size: 0.7em; }
+    .nav button, .filters button { padding: 0.4em 0.8em; font-size: 0.8em; }
+  }
 </style>
 </head>
 <body>
 <header>
-<h1>Base Scout Santa Maria del Bagno</h1>
-<p>Calendario disponibilità Casa e Campo di Reparto</p>
+  <h1>Base Scout Santa Maria del Bagno</h1>
+  <p>Calendario disponibilità Casa e Campo di Reparto</p>
 </header>
 
 <div class="legend">
@@ -36,142 +41,182 @@
 </div>
 
 <div class="nav">
-<button onclick="changeMonth(-1)">◀️ Mese precedente</button>
-<span id="monthLabel"></span>
-<button onclick="changeMonth(1)">Mese successivo ▶️</button>
+  <button onclick="changeMonth(-1)">◀️ Mese precedente</button>
+  <span id="monthLabel"></span>
+  <button onclick="changeMonth(1)">Mese successivo ▶️</button>
 </div>
 
+<div class="filters">
+  <button onclick="setFilter('all')">Tutti</button>
+  <button onclick="setFilter('casa')">Solo Casa</button>
+  <button onclick="setFilter('campo')">Solo Campo</button>
+</div>
+
+<div id="loading">⏳ Caricamento calendario...</div>
+
 <div class="calendar">
-<h2 id="calendarTitle"></h2>
-<div id="calendarContainer"></div>
+  <h2 id="calendarTitle"></h2>
+  <div id="calendarContainer"></div>
 </div>
 
 <footer>I dati sono sincronizzati dal calendario Google ufficiale della base.</footer>
 
 <script>
-const icsUrl = "https://calendar.google.com/calendar/ical/santamariadelbagno%40gmail.com/public/basic.ics"; // 🔗 Inserisci qui il tuo link ICS
+const icsUrl = "https://calendar.google.com/calendar/ical/santamariadelbagno%40gmail.com/public/basic.ics";
 let currentYear = new Date().getFullYear();
 let currentMonth = new Date().getMonth();
+let allOccupancy = {};
+let currentFilter = 'all';
 
-async function fetchICS(url){
-  const res = await fetch(url);
-  return await res.text();
+function parseDate(str) {
+  const y = parseInt(str.slice(0, 4));
+  const m = parseInt(str.slice(4, 6)) - 1;
+  const d = parseInt(str.slice(6, 8));
+  return new Date(y, m, d);
 }
 
-function parseICS(ics){
+// Unisce righe spezzate ICS (quelle che iniziano con spazio/tab)
+function normalizeICS(icsText) {
+  return icsText.replace(/\r?\n[ \t]/g, "");
+}
+
+function parseICS(ics) {
   const events = [];
   const lines = ics.split(/\r?\n/);
   let event = null;
-  for(let line of lines){
-    if(line.startsWith("BEGIN:VEVENT")) event = {};
-    else if(line.startsWith("END:VEVENT")) { if(event) events.push(event); event=null; }
-    else if(event){
-      if(line.startsWith("SUMMARY:")) event.summary=line.substring(8);
-      if(line.startsWith("DESCRIPTION:")) event.description=line.substring(12);
-      if(line.startsWith("DTSTART")) event.start=line.split(":")[1];
-      if(line.startsWith("DTEND")) event.end=line.split(":")[1];
+  for (let line of lines) {
+    if (line.startsWith("BEGIN:VEVENT")) event = {};
+    else if (line.startsWith("END:VEVENT")) { if (event) events.push(event); event = null; }
+    else if (event) {
+      if (line.startsWith("SUMMARY")) event.summary = line.split(":").slice(1).join(":");
+      if (line.startsWith("DESCRIPTION")) event.description = line.split(":").slice(1).join(":");
+      if (line.startsWith("DTSTART")) event.start = line.split(":")[1];
+      if (line.startsWith("DTEND")) event.end = line.split(":")[1];
     }
   }
   return events;
 }
 
-function parseDate(str){
-  const y=parseInt(str.slice(0,4));
-  const m=parseInt(str.slice(4,6))-1;
-  const d=parseInt(str.slice(6,8));
-  return new Date(y,m,d);
-}
-
-function buildOccupancy(events){
-  const status = {}; 
-  events.forEach(ev=>{
-    const text = ((ev.summary||"")+" "+(ev.description||"")).toLowerCase();
-    const start=parseDate(ev.start);
-    const end=parseDate(ev.end);
+function buildOccupancy(events) {
+  const status = {};
+  events.forEach(ev => {
+    const text = ((ev.summary || "") + " " + (ev.description || "")).toLowerCase();
+    const start = parseDate(ev.start);
+    const end = parseDate(ev.end);
     const isCasa = text.includes("casa");
     const isCampo = text.includes("campo");
-    for(let d=new Date(start); d<end; d.setDate(d.getDate()+1)){
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      if(!status[key]) status[key]={casa:false,campo:false};
-      if(isCasa) status[key].casa=true;
-      if(isCampo) status[key].campo=true;
+      if (!status[key]) status[key] = { casa: false, campo: false };
+      if (isCasa) status[key].casa = true;
+      if (isCampo) status[key].campo = true;
     }
   });
   return status;
 }
 
-function renderCalendar(status, year, month){
+function renderCalendar(status, year, month) {
   const container = document.getElementById("calendarContainer");
   const title = document.getElementById("calendarTitle");
-  const months = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
-                  "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
-  const dayNames = ["Lun","Mar","Mer","Gio","Ven","Sab","Dom"];
-  
+  const months = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+  const dayNames = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+
   title.textContent = `${months[month]} ${year}`;
-  
-  const firstDay = new Date(year, month, 1).getDay(); 
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-  
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
   let html = "<table><thead><tr>";
   dayNames.forEach(d => html += `<th>${d}</th>`);
   html += "</tr></thead><tbody><tr>";
-  
-  let offset = (firstDay + 6) % 7; 
-  for(let i=0; i<offset; i++) html += "<td></td>";
-  
-  for(let d=1; d<=daysInMonth; d++){
+
+  let offset = (firstDay + 6) % 7;
+  for (let i = 0; i < offset; i++) html += "<td></td>";
+
+  for (let d = 1; d <= daysInMonth; d++) {
     const date = new Date(year, month, d);
     const key = `${year}-${month}-${d}`;
-    const dayStatus = status[key] || {casa:false, campo:false};
-    const dayName = dayNames[date.getDay() === 0 ? 6 : date.getDay()-1]; 
+    const dayStatus = status[key] || { casa: false, campo: false };
+
+    const casaColor = dayStatus.casa ? "#d32f2f" : "#388e3c";
+    const campoColor = dayStatus.campo ? "#d32f2f" : "#388e3c";
+
+    let statusHTML = "";
+    if (currentFilter === "all" || currentFilter === "casa")
+      statusHTML += `<span style="background:${casaColor};">Casa</span>`;
+    if (currentFilter === "all" || currentFilter === "campo")
+      statusHTML += `<span style="background:${campoColor};">Campo di Reparto</span>`;
 
     html += `<td>
-      <span class="day-number">${d} (${dayName})</span>
-      <div class="status">
-        <span style="background:${dayStatus.casa?'#d32f2f':'#388e3c'};">Casa</span>
-        <span style="background:${dayStatus.campo?'#d32f2f':'#388e3c'};">Campo di Reparto</span>
-      </div>
+      <span class="day-number">${d}</span>
+      <div class="status">${statusHTML}</div>
     </td>`;
-    
-    if((offset + d) % 7 === 0) html += "</tr><tr>";
+
+    if ((offset + d) % 7 === 0) html += "</tr><tr>";
   }
-  
+
   let remaining = (7 - (offset + daysInMonth) % 7) % 7;
-  for(let i=0; i<remaining; i++) html += "<td></td>";
-  
+  for (let i = 0; i < remaining; i++) html += "<td></td>";
+
   html += "</tr></tbody></table>";
   container.innerHTML = html;
 }
 
-function updateMonthLabel(){
-  const months=["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
-                "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
-  document.getElementById("monthLabel").textContent=`${months[currentMonth]} ${currentYear}`;
+function updateMonthLabel() {
+  const months = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+  document.getElementById("monthLabel").textContent = `${months[currentMonth]} ${currentYear}`;
 }
 
-async function loadCalendar(){
+async function loadCalendar() {
   updateMonthLabel();
+  document.getElementById("loading").style.display = "block";
+
+  // Caching per 1 ora
+  const cacheKey = "icsCache";
+  const cached = localStorage.getItem(cacheKey);
   let occupancy = {};
+
+  if (cached) {
+    const data = JSON.parse(cached);
+    if (Date.now() - data.timestamp < 3600000) { // 1 ora
+      occupancy = data.occupancy;
+      renderCalendar(occupancy, currentYear, currentMonth);
+      document.getElementById("loading").style.display = "none";
+      return;
+    }
+  }
+
   try {
-    const ics = await fetchICS(icsUrl);
+    const res = await fetch(icsUrl);
+    const ics = normalizeICS(await res.text());
     const events = parseICS(ics);
     occupancy = buildOccupancy(events);
+    localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), occupancy }));
   } catch (e) {
-    console.warn("Nessun calendario caricato, mostro giorni liberi.");
+    console.warn("Errore nel caricamento del calendario:", e);
   }
+
+  allOccupancy = occupancy;
   renderCalendar(occupancy, currentYear, currentMonth);
+  document.getElementById("loading").style.display = "none";
 }
 
-function changeMonth(offset){
-  currentMonth+=offset;
-  if(currentMonth<0){currentMonth=11; currentYear--;}
-  else if(currentMonth>11){currentMonth=0; currentYear++;}
-  loadCalendar();
+function changeMonth(offset) {
+  currentMonth += offset;
+  if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+  else if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+  renderCalendar(allOccupancy, currentYear, currentMonth);
+  updateMonthLabel();
 }
 
-// Disegna il calendario di base subito
+function setFilter(f) {
+  currentFilter = f;
+  renderCalendar(allOccupancy, currentYear, currentMonth);
+}
+
+// Disegna subito il calendario base
 renderCalendar({}, currentYear, currentMonth);
 loadCalendar();
 </script>
 </body>
 </html>
+
